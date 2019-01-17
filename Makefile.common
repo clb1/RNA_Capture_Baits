@@ -1,0 +1,58 @@
+SHELL = /bin/bash
+
+# To be defined by including Makefile
+# TARGET_ISOFORMS = 
+# NUM_BAITS = 
+# BAIT_LENGTH = 
+
+ROOT_DIR = /raid1/discovery/Baits
+SCRIPTS = ${ROOT_DIR}/scripts
+CGDB_ROOT = /raid1/projects/CGDB
+CGDB_FASTA = ${CGDB_ROOT}/models/CGDBv2.0.fa
+CGDB_BED = ${CGDB_ROOT}/models/CGDBv2.0.bed
+GENOME_FASTA = /raid1/references_and_indexes/hg38/hg38.fa
+GENOME_REPEATS_NR_NONHERV_FASTA = /raid1/databases/Dfam/hg38_dfam.nrph.nonHERV-hits.fa
+GENOME_REPEATS_ALL_NONHERV_BED = /raid1/databases/Dfam/hg38_dfam.nonHERV-hits.bed.gz
+CHROM_SIZES = /raid1/references_and_indexes/hg38/hg38_chrom_sizes.tsv
+SCRATCH_DIR = /raid1/projects/scratch
+
+.PRECIOUS: bait_segments_repeats_subtracted.bed.gz
+
+bait_segments.bed.gz: ${TARGET_ISOFORMS}
+	sort ${TARGET_ISOFORMS} > target_isoforms.txt
+	sort -k4,4 -k10,10n ${CGDB_BED} > CGDB_namesorted.bed
+	join -1 1 -2 4 target_isoforms.txt CGDB_namesorted.bed | awk 'BEGIN{OFS="\t"}{print $$2,$$3,$$4,$$1,$$5,$$6,$$7,$$8,$$9,$$10,$$11,$$12}' > only_targets_CGDB.bed
+	cut -f 4,10 only_targets_CGDB.bed | sort -k1,1 > num_exons.tsv
+	bed12ToBed6 -i CGDB_namesorted.bed | awk '{c[$$4]++; printf "%s\t%s\t%s\t%s\t%s\t%s\n",$$1,$$2,$$3,$$4,c[$$4],$$6}' | sort -k4,4 -k5,5n -S 5G --parallel=5 > exons.bed
+	join -1 1 -2 4 num_exons.tsv exons.bed | awk '{if ($$7=="-") {a=$$2-$$6+1} else {a=$$6}} {printf "%s\t%d\t%d\t%s_%d/%d\t%d\t%s\n",$$3,$$4,$$5,$$1,a,$$2,$$2,$$7}' | \
+		sort -k1,1 -k2,2n -S 5G --parallel=5 | awk '($$3-$$2>=${BAIT_LENGTH})' > annot_exons.bed
+	bedtools merge -i annot_exons.bed -s > annot_exons_merged.bed
+
+	awk '($$4 == "+")' annot_exons_merged.bed > annot_exons_merged_plus.bed
+	bedtools makewindows -b annot_exons_merged_plus.bed -w ${BAIT_LENGTH} -s 1 | awk '($$3-$$2>=${BAIT_LENGTH}){printf "%s\tNA\t0\t+\n",$$0}' > annot_exons_merged_plus_windows.bed
+	bedtools intersect -a annot_exons_merged_plus_windows.bed -b annot_exons.bed -s -f 1.0 -wo | sort -k1,1 -k2,2n -k3,3n -k10,10 -S 25G --parallel=19 | \
+		bedtools groupby -g 1,2,3,6 -c 1,2,3,10,11,12 -o first,first,first,collapse,collapse,first | cut -f 5- | \
+		bedtools groupby -g 4 -c 1,2,3,4,5,6 -o first,first,last,first,count,first | cut -f 2- | ${SCRIPTS}/parseContiguousSegments.py bait_segments_plus.bed
+
+	awk '($$4 == "-")' annot_exons_merged.bed > annot_exons_merged_minus.bed
+	bedtools makewindows -b annot_exons_merged_minus.bed -w ${BAIT_LENGTH} -s 1 | awk '($$3-$$2>=${BAIT_LENGTH}){printf "%s\tNA\t0\t-\n",$$0}' > annot_exons_merged_minus_windows.bed
+	bedtools intersect -a annot_exons_merged_minus_windows.bed -b annot_exons.bed -s -f 1.0 -wo | sort -k1,1 -k2,2n -k3,3n -k10,10 -S 25G --parallel=19 | \
+		bedtools groupby -g 1,2,3,6 -c 1,2,3,10,11,12 -o first,first,first,collapse,collapse,first | cut -f 5- | \
+		bedtools groupby -g 4 -c 1,2,3,4,5,6 -o first,first,last,first,count,first | cut -f 2- | ${SCRIPTS}/parseContiguousSegments.py bait_segments_minus.bed
+
+	cat bait_segments_plus.bed bait_segments_minus.bed | sort -k1,1 -k2,2n | gzip -c > $@
+	rm target_isoforms.txt CGDB_namesorted.bed only_targets_CGDB.bed num_exons.tsv exons.bed annot_exons.bed annot_exons_merged.bed
+	rm annot_exons_merged_plus.bed annot_exons_merged_plus_windows.bed bait_segments_plus.bed
+	rm annot_exons_merged_minus.bed annot_exons_merged_minus_windows.bed bait_segments_minus.bed
+
+
+bait_segments_repeats_subtracted.bed.gz: bait_segments.bed.gz
+	bedtools subtract -a $< -b ${GENOME_REPEATS_ALL_NONHERV_BED} | gzip -c > $@
+
+
+antitarget_isoforms.txt: /raid1/projects/CGDB/pORFs/CGDBv2.0/representative_rRNA_transcripts.txt
+	cat $^ > $@
+
+
+segment_set.bed bait_set.bed bait_set.fa: antitarget_isoforms.txt bait_segments_repeats_subtracted.bed.gz ${TARGET_ISOFORMS}
+	${SCRIPTS}/buildBaitSet.py ${NUM_BAITS} ${BAIT_LENGTH} ${CGDB_FASTA} ${CGDB_BED} ${GENOME_FASTA} ${GENOME_REPEATS_NR_NONHERV_FASTA} ${SCRATCH_DIR} $^ segment_set.bed bait_set.bed bait_set.fa

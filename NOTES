@@ -1,0 +1,35 @@
+http://www.genoscope.cns.fr/externe/rna_workshop/slides/JeanMarc_Aury.pdf
+And other talks from http://www.genoscope.cns.fr/externe/rna_workshop/
+
+Elution of long cDNA: 
+http://mgen.microbiologyresearch.org/content/journal/mgen/10.1099/mgen.0.000087#tab2
+
+Using MyBaits:
+https://www.biotechniques.com/BiotechniquesJournal/2016/December/Targeted-capture-and-sequencing-of-gene-sized-DNA-molecules/biotechniques-365385.html
+
+
+Protocol:
+Step 1) Optional. Isolate polyA mRNA.
+     Do protocol with and without this step. Instead of using qPCR to test which is
+     better, just take both all the way through and make the judgement with the Minion sequencing output.
+
+Step 2) Isolate target transcripts with biotinylated 50nt RNA baits.
+     Methods:
+       Miltenyi 
+       https://patents.google.com/patent/US20170321253A1/en (Uses shorter probes, enabling shorter hybridization times and lower temperatures)
+       MyBaits manual(?)
+       In my Mendeley: Clontech "SMARTer ® Target RNA Capture for Illumina ® User Manual"
+     Again, if different target isolation methods are used, make performance judgement based on Minion sequencing output.
+
+Step 3) Create full length cDNA with Lexogen TeloPrime Kit.
+       If multiplexing, use custom dT primer with a ONT bardode.
+       Barcodes are in https://github.com/rrwick/Porechop/blob/master/porechop/adapters.py
+       See discussion of the kit's performance in RNA workshop talk (above).
+
+Step 4) Perform end repair / dA-tailing with NEB kit that is compatible with ONT Minion workflows
+     https://www.neb.com/products/e7546-nebnext-ultra-ii-end-repair-da-tailing-module#Product%20Information
+
+
+Step 5) Ligate on Minion sequencing adapters
+     https://store.nanoporetech.com/catalog/product/view/id/118/s/ligation-sequencing-kit-1d/category/28/
+
